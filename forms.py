@@ -24,3 +24,11 @@ class SetupForm(FlaskForm):
     reason = StringField('Reason',
                          validators=[DataRequired(), Length(min=10)])
     submit = SubmitField('Finish Setup')
+
+
+class LoginForm(FlaskForm):
+    username = StringField('Username',
+                           validators=[DataRequired(), Length(min=2, max=20)])
+    password = PasswordField('Password',
+                             validators=[DataRequired(), Length(min=8, max=20)])
+    submit = SubmitField('Login')

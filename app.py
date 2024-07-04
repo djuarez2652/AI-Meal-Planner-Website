@@ -3,7 +3,9 @@ import sqlite3
 from flask_sqlalchemy import SQLAlchemy
 from flask import Flask, render_template, url_for, flash, redirect, request
 from flask_behind_proxy import FlaskBehindProxy
-from forms import RegistrationForm, SetupForm
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from forms import RegistrationForm, SetupForm, LoginForm
 
 
 app = Flask(__name__)
@@ -11,10 +13,13 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = os.getenv('SECRET_TOKEN')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
 
-proxied = FlaskBehindProxy(app)
 db = SQLAlchemy(app)
+proxied = FlaskBehindProxy(app)
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
 
-class User(db.Model):
+
+class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(20), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
@@ -28,23 +33,39 @@ class User(db.Model):
         return f'User({self.username}, {self.email})'
 
 with app.app_context():
-    db.drop_all()
+    # db.drop_all()
     db.create_all()
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(user_id)
 
 
 @app.route('/')
 @app.route('/home')
+@login_required
 def home():
-    login = request.args.get('is_logged_in')
-    if login:
-        return render_template('home.html', subtitle='Home Page', text='')
-    else:
-        return redirect(url_for('login'))
+    return render_template('home.html', subtitle='Home Page', text='')
 
 
-@app.route('/login')
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    return render_template('login.html')
+    form = LoginForm()
+    if form.validate_on_submit():
+        username_or_email = form.username.data
+        password = form.password.data
+
+        user = User.query.filter((User.username == username_or_email) | (User.email == username_or_email)).first()
+
+        if user and check_password_hash(user.password, password):
+            login_user(user)
+            return redirect(url_for('home'))
+        else:
+            logout_user()
+            return render_template('login.html', form=form, incorrect=True)
+    return render_template('login.html', form=form, incorrect=False)
+
 
 @app.route('/setup', methods=['GET', 'POST'])
 def setup():
@@ -58,18 +79,27 @@ def setup():
         user.reason = form.reason.data
         db.session.commit()
         flash(f'Account created for {user.username}!', 'success')
-        return redirect(url_for('home', is_logged_in=True))
+        login_user(user)
+        return redirect(url_for('home'))
     return render_template('setup.html', title='Setup', form=form)
+
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     form = RegistrationForm()
     if form.validate_on_submit():
-        user = User(username=form.username.data, email=form.email.data, password=form.password.data)
+        user = User(username=form.username.data, email=form.email.data, password=generate_password_hash(form.password.data))
         db.session.add(user)
         db.session.commit()
         return redirect(url_for('setup', user_id=user.id))
     return render_template('register.html', title='Register', form=form)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
 
 
 if __name__ == '__main__':
