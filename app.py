@@ -24,6 +24,7 @@ class User(UserMixin, db.Model):
     username = db.Column(db.String(20), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password = db.Column(db.String(60), nullable=False)
+    setup = db.Column(db.Boolean, nullable=False)
     age = db.Column(db.Integer, nullable=True)
     weight = db.Column(db.Integer, nullable=True)
     goal_weight = db.Column(db.Integer, nullable=True)
@@ -46,6 +47,11 @@ def load_user(user_id):
 @app.route('/home')
 @login_required
 def home():
+
+    is_setup = current_user.setup
+
+    if not is_setup:
+        return redirect(url_for('setup', user_id=current_user.id))
     return render_template('home.html', subtitle='Home Page', text='')
 
 
@@ -68,6 +74,7 @@ def login():
 
 
 @app.route('/setup', methods=['GET', 'POST'])
+@login_required
 def setup():
     user_id = request.args.get('user_id')
     form = SetupForm()
@@ -88,7 +95,10 @@ def setup():
 def register():
     form = RegistrationForm()
     if form.validate_on_submit():
-        user = User(username=form.username.data, email=form.email.data, password=generate_password_hash(form.password.data))
+        user = User(username=form.username.data,
+                    email=form.email.data,
+                    password=generate_password_hash(form.password.data),
+                    setup=False)
         db.session.add(user)
         db.session.commit()
         return redirect(url_for('setup', user_id=user.id))
